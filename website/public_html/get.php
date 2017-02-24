@@ -12,13 +12,14 @@ if(!(isset($_GET['id']))) {
 require "database.php";
 
 $database = Database::getInstance();
-$database->prepare("SELECT distance FROM measurepoint WHERE deviceid=:deviceid ORDER BY id DESC LIMIT 1;");
+$database->prepare("SELECT distance, IRdistance FROM measurepoint WHERE deviceid=:deviceid ORDER BY id DESC LIMIT 1;");
 $database->bindParam(":deviceid", $_GET['id']);
 $database->execute();
 $data = $database->getAll();
 if(count($data) > 0) {
     $distance = intval($data[0]['distance']);
-    $response = array('success' => true, 'distance' => $distance);
+    $IRdistance = intval($data[0]['IRdistance']);
+    $response = array('success' => true, 'distance' => $distance, 'IRdistance' => $IRdistance);
     echo json_encode($response);
 }
 

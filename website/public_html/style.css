@@ -15,5 +15,5 @@
     overflow: hidden;
 }
 .image img {    
-    height: 120px; /** height of the dustbin*/
+    height: 120px; /** height of the dustbin in cm*/
 }

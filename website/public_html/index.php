@@ -26,15 +26,19 @@ $dustbins = $database->getAll();
           <div class="title"><b>Dustbin: </b><?=$dustbin['deviceid']?></div>
           <div class="data">
               <?php
-              $database->prepare("SELECT distance FROM measurepoint WHERE deviceid=:deviceid ORDER BY id DESC LIMIT 1;");
+              $database->prepare("SELECT distance, IRdistance FROM measurepoint WHERE deviceid=:deviceid ORDER BY id DESC LIMIT 1;");
               $database->bindParam(":deviceid", $dustbin['deviceid']);
               $database->execute();
-              $distance = $database->getAll()[0]['distance'];
-              
+              $all = $database->getAll()[0];
+              $distance = intval($all['distance']);
+              $distance *= 10;
+              $IRdistance = $all['IRdistance'];
               ?>
-              <div class="full"><b>Dustbin still has: </b><span class="distance"><?=$distance?></span> mm of free space</div>
-              <div class="image"><img src="dustbin1.png" />
-                  <div class="overlay"><img src="dustbin2.png" /></div>
+              <div class="full"><b>Echo says dustbin still has: </b><span class="distance"><?=$distance?></span> mm of free space<br/>
+                  <b>IR says dustbin still has: </b><span class="IRdistance"><?=$IRdistance?></span> mm of free space
+              </div>
+              <div class="image"><img src="dustbin2.png" />
+                  <div class="overlay"><img src="dustbin1.png" /></div>
               </div>
           </div>
       </div>

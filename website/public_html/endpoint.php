@@ -60,7 +60,7 @@ if(!($_GET['key'] == "2uyerebra5uret7bac5edAFe")) {
 $json = json_decode(file_get_contents('php://input'), true);
 
 if(!(isset($json['dev_id']) && isset($json["payload_fields"]) && 
-        isset($json["payload_fields"]['distance']))) {
+        isset($json["payload_fields"]['distance']) && isset($json["payload_fields"]['IRdistance']))) {
 
     $response = array(
         "success" => false,
@@ -74,15 +74,15 @@ if(!(isset($json['dev_id']) && isset($json["payload_fields"]) &&
 }
 $dustbinid = $json['dev_id'];
 $distance = $json["payload_fields"]['distance'];
+$IRdistance = $json["payload_fields"]['IRdistance'];
 
 require "database.php";
 
-
-
 $database = Database::getInstance();
-$database->prepare("INSERT INTO measurepoint (deviceid, distance) VALUES (:dustbinid, :distance)");
+$database->prepare("INSERT INTO measurepoint (deviceid, distance, IRdistance) VALUES (:dustbinid, :distance, :IRdistance)");
 $database->bindParam(":dustbinid", $dustbinid);
 $database->bindParam(":distance", $distance);
+$database->bindParam(":IRdistance", $IRdistance);
 $database->execute();
 
 $response = array(
