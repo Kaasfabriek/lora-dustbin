@@ -1,0 +1,19 @@
+.dustbin {
+    border: gray dotted 2px;
+    float: left;
+    padding: 5px 5px 5px 5px;
+}
+.image {
+    position: relative;
+    float: right;
+}
+.image .overlay {
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    z-index: 9999;
+    overflow: hidden;
+}
+.image img {    
+    height: 120px; /** height of the dustbin*/
+}

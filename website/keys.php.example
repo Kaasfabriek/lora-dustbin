@@ -1,0 +1,4 @@
+<?php
+// Move this file to public_html
+$LOGIN = "prullenbak";
+$PASSWORD = "123456";
