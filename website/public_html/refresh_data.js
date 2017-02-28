@@ -18,7 +18,7 @@ function refreshData() {
                 data.distance *= 10; // cm to mm
                 $distance.html(data.distance);
                 $IRdistance.html(data.IRdistance);
-                $("#" + $id).find(".image .overlay").css("height", (data.distance / 10));               
+                $("#" + $id).find(".image .overlay").css("height", (data.IRdistance / 10));               
                 console.log()
             },
             error: function(data) {
