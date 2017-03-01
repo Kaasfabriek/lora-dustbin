@@ -40,10 +40,13 @@
 }
  * 
  * for this application to work there must be a payload function in TTN creating the following fields:
- * - distance: integer
+ * - distance: integer (for the echo sensor)
+ * - IRdistance: integer (for the IR sensor)
  */
-file_put_contents("/log.txt", file_get_contents('php://input'));
+// for debugging purposes
+//file_put_contents("/log.txt", file_get_contents('php://input'));
 
+// check the access key
 if(!($_GET['key'] == "2uyerebra5uret7bac5edAFe")) {
     file_put_contents("/log.txt", "Access denied: wrong key");
     $response = array(
@@ -57,8 +60,10 @@ if(!($_GET['key'] == "2uyerebra5uret7bac5edAFe")) {
     die();
     
 }
+// get the input POST data that TTN sent
 $json = json_decode(file_get_contents('php://input'), true);
 
+// Check for the necessary fields
 if(!(isset($json['dev_id']) && isset($json["payload_fields"]) && 
         isset($json["payload_fields"]['distance']) && isset($json["payload_fields"]['IRdistance']))) {
 
@@ -72,12 +77,15 @@ if(!(isset($json['dev_id']) && isset($json["payload_fields"]) &&
     echo $json_encode($response);
     die();
 }
+// prepare the variables
 $dustbinid = $json['dev_id'];
 $distance = $json["payload_fields"]['distance'];
 $IRdistance = $json["payload_fields"]['IRdistance'];
 
+// get database support (works with PDO)
 require "database.php";
 
+// insert variables into the database
 $database = Database::getInstance();
 $database->prepare("INSERT INTO measurepoint (deviceid, distance, IRdistance) VALUES (:dustbinid, :distance, :IRdistance)");
 $database->bindParam(":dustbinid", $dustbinid);
@@ -85,6 +93,7 @@ $database->bindParam(":distance", $distance);
 $database->bindParam(":IRdistance", $IRdistance);
 $database->execute();
 
+// return succes
 $response = array(
   "success" => true,  
 );

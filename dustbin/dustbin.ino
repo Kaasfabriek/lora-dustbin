@@ -2,11 +2,25 @@
  * Author: Dennis Ruigrok
  * Date: 2017-02-18
  * 
+ * This program is made for a dustbin 150cm max (IR). The arduino takes a number of measurements (numberOfSamples) from a number of sensors.
+ * These sensors are:
+ * 
+ * - GP2Y0A02YK IR distance sensor with a range of 20cm min and 150cm max
+ * The IR sensor take measurements in mm
+ * - HCSR04 Ultrasonic echo sensor. 
+ * Takes measurements from 2cm to 4m - But as we tried this in a dustbin it takes very inaccurate measurements. Still be left it in.
  *
- * This program is meant to be used with an Arduino UNO or NANO, conencted to an RNxx3 radio module.
- * It will most likely also work on other compatible Arduino or Arduino compatible boards, like The Things Uno, but might need some slight modifications.
- *
- * Connect the RN2xx3 as follows:
+ * The program puts the measurements in a buffer called the RunningMedian. This library then provides support to take the median or average.
+ * We take the Average of the Echo sensor and the Median of the IR sensor.
+ * 
+ * The program then send the data over Lora (https://en.wikipedia.org/wiki/LPWAN) to The Things Network. The login keys are in keys.h which you can create by renaming keys.h.example
+ * The measurements are first checked for out of reach, if so, the lowest value of the measurements is tried. I still out of reach the max value of 1 byte or 2 bytes (0xFF or 0xFFFF) is sent.
+ * - Echo sensor is in cm so we can use a number between 0 and 255, which fits in 1 byte
+ * - Ultrasonic sensor is in mm so we can use two bytes which gives us 0 to 255 * 255mm which is more than enough.
+ * 
+ * Connect the hardware:
+ *  *
+ * Connect the RN2xx3 to the arduino as follows:
  * RN2xx3 -- Arduino
  * Uart TX -- 10
  * Uart RX -- 11
@@ -14,48 +28,66 @@
  * Vcc -- 3.3V
  * Gnd -- Gnd
  *
- * It uses the GP2Y0A02YK IR distance sensor and transmits the distance to TTN
+ * Connect the IR to the arduino as follows:
+ * Red wire: 5V
+ * Black wire: GND
+ * Yellow wire: A0
+ *
+ * Connect the Echo to the arduino as follows:
+ * 5V to 5V
+ * 0V or GND to GND
+ * echoPin to 3
+ * Tigger Pin to 4
+ * Some chinese echo sensors have the echo and trigger pin switched!
+ * 
  *
  */
 
-
+// samples to take averages of
 #define numberOfSamples 9
 #include <RunningMedian.h>
-#include <rn2xx3.h>
+// Lora library
 #include <SoftwareSerial.h>
+#include <rn2xx3.h>
+#include "keys.h"
+
+// IR sensor
 #define SharpPin A0
 int distanceIR;
+
+// Echo sensor
 long distanceEcho;
 #define trigPin 4
 #define echoPin 3
-#include "keys.h"
+
+// Delays
 #define betweenMeasurements 1000
 #define waitBetweenLora ((10*1000) - (betweenMeasurements * numberOfSamples))
+// number of seconds minus the seconds used for measurements, so the intervals are still the number of seconds
 
 SoftwareSerial mySerial(10, 11); // RX, TX
-
 //create an instance of the rn2xx3 library,
 //giving the software serial as port to use
 rn2xx3 myLora(mySerial);
 
-
+// Buffers for measurements
 RunningMedian samplesIR = RunningMedian(numberOfSamples);
 RunningMedian samplesEcho = RunningMedian(numberOfSamples);
 
 // the setup routine runs once when you press reset:
 void setup()
-{
-  //output LED pin
-  pinMode(13, OUTPUT);
+{  
+  pinMode(13, OUTPUT); // led pin
+  // setup echo sensor
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
+  
   led_on();
-
   // Open serial communications and wait for port to open:
   Serial.begin(57600); //serial port to computer
-  mySerial.begin(9600); //serial port to radio
+  // setup lora
+  mySerial.begin(9600); //serial port to lora radio
   Serial.println(F("Startup"));
-
   initialize_radio();
 
   led_off();
@@ -99,9 +131,6 @@ void initialize_radio()
   //ABP: initABP(String addr, String AppSKey, String NwkSKey);
   join_result = myLora.initABP(addr, appskey, mwkskey);
 
-  //OTAA: initOTAA(String AppEUI, String AppKey);
-  //join_result = myLora.initOTAA("70B3D57ED00001A6", "A23C96EE13804963F8C2BD6285448198");
-
   while(!join_result)
   {
     Serial.println(F("Unable to join. Are your keys correct, and do you have TTN coverage?"));
@@ -116,7 +145,7 @@ void initialize_radio()
 void loop()
 {
     led_on();
-
+    // take all the samples with [betweenMeasurements] seconds intervals
     for(int i = 0; i < numberOfSamples; i++) {
       distanceIR = get_Sharp_GP2Y0A02YK_Distance(SharpPin);
       samplesIR.add(distanceIR); // add to buffer
@@ -134,7 +163,7 @@ void loop()
 
       // display
       Serial.print(F("Echo: "));     
-      Serial.print(distanceEcho*10);     
+      Serial.print(distanceEcho*10); // because it's cm and we debug in mm so it's the same as the IR
       Serial.println(F(" mm"));
       Serial.print(F("IR: "));     
       Serial.print(distanceIR);     
@@ -145,14 +174,18 @@ void loop()
     }
     
     led_off();
-
+    
     sendLora();    
 }
 
+/*
+ * Check out of reach of sensors
+ * Take averages or medians
+ * Send to TTN via lora
+ * 
+ */
 void sendLora() {
-    led_on();     
-
-    
+    led_on();        
 
          
     // pick one Echo
@@ -189,25 +222,31 @@ void sendLora() {
     Serial.println(distanceEchoFinal * 10);
     Serial.print(F("Choose for IR: "));
     Serial.println(distanceIRFinal);
-  
-    uint16_t prepareDistanceIR = distanceIRFinal & 0xFFFF; // 2 byte max filter
+
+    // now we split in bytes
+    // ir Takes two bytes
+    uint16_t prepareDistanceIR = distanceIRFinal & 0xFFFF; // &0xFFFF makes sure the max of the variable is the max of two bytes
     
-    uint8_t distance1IR = (prepareDistanceIR >> 8) & 0xFF; // first byte
+    uint8_t distance1IR = (prepareDistanceIR >> 8) & 0xFF; // first byte with a max of 255 (one byte max)
     uint8_t distance2IR = (prepareDistanceIR) & 0xFF; // second byte
-    
+
+    // make up the messenge for lora, we have 3 bytes to send
     uint8_t prepareMessenge[] = {preparedistanceEcho, distance1IR, distance2IR};
+
+    // Send it
     Serial.println(F("Lora"));
     myLora.txBytes(prepareMessenge, sizeof(prepareMessenge)); 
     led_off();
 
     delay(waitBetweenLora);
+    // Clear the buffers to start a new
     samplesIR.clear();
     samplesEcho.clear();
 }
 
 
 /** Sharp distance sensor read function - uses analog port
-return distance in mm
+ *  return distance in mm
 **/
 float get_Sharp_GP2Y0A02YK_Distance(int PinID)
 {
