@@ -19,20 +19,28 @@
  */
 
 
-
+#define numberOfSamples 9
+#include <RunningMedian.h>
 #include <rn2xx3.h>
 #include <SoftwareSerial.h>
 #define SharpPin A0
 int distanceIR;
+long distanceEcho;
 #define trigPin 4
 #define echoPin 3
 #include "keys.h"
+#define betweenMeasurements 1000
+#define waitBetweenLora ((10*1000) - (betweenMeasurements * numberOfSamples))
 
 SoftwareSerial mySerial(10, 11); // RX, TX
 
 //create an instance of the rn2xx3 library,
 //giving the software serial as port to use
 rn2xx3 myLora(mySerial);
+
+
+RunningMedian samplesIR = RunningMedian(numberOfSamples);
+RunningMedian samplesEcho = RunningMedian(numberOfSamples);
 
 // the setup routine runs once when you press reset:
 void setup()
@@ -46,12 +54,9 @@ void setup()
   // Open serial communications and wait for port to open:
   Serial.begin(57600); //serial port to computer
   mySerial.begin(9600); //serial port to radio
-  Serial.println("Startup");
+  Serial.println(F("Startup"));
 
   initialize_radio();
-
-  //transmit a startup message
-  myLora.tx("TTN Mapper on TTN Enschede node");
 
   led_off();
   delay(2000);
@@ -75,20 +80,20 @@ void initialize_radio()
   String hweui = myLora.hweui();
   while(hweui.length() != 16)
   {
-    Serial.println("Communication with RN2xx3 unsuccessful. Power cycle the board.");
+    Serial.println(F("Communication with RN2xx3 unsuccessful. Power cycle the board."));
     Serial.println(hweui);
     delay(10000);
     hweui = myLora.hweui();
   }
 
   //print out the HWEUI so that we can register it via ttnctl
-  Serial.println("When using OTAA, register this DevEUI: ");
+  Serial.println(F("When using OTAA, register this DevEUI: "));
   Serial.println(myLora.hweui());
-  Serial.println("RN2xx3 firmware version:");
+  Serial.println(F("RN2xx3 firmware version:"));
   Serial.println(myLora.sysver());
 
   //configure your keys and join the network
-  Serial.println("Trying to join TTN");
+  Serial.println(F("Trying to join TTN"));
   bool join_result = false;
 
   //ABP: initABP(String addr, String AppSKey, String NwkSKey);
@@ -99,11 +104,11 @@ void initialize_radio()
 
   while(!join_result)
   {
-    Serial.println("Unable to join. Are your keys correct, and do you have TTN coverage?");
+    Serial.println(F("Unable to join. Are your keys correct, and do you have TTN coverage?"));
     delay(60000); //delay a minute before retry
     join_result = myLora.init();
   }
-  Serial.println("Successfully joined TTN");
+  Serial.println(F("Successfully joined TTN"));
 
 }
 
@@ -112,44 +117,94 @@ void loop()
 {
     led_on();
 
+    for(int i = 0; i < numberOfSamples; i++) {
+      distanceIR = get_Sharp_GP2Y0A02YK_Distance(SharpPin);
+      samplesIR.add(distanceIR); // add to buffer
+      
+      Serial.println(F("echo trigger"));
+      long duration;      
+      digitalWrite(trigPin, LOW);  
+      delayMicroseconds(2); 
+      digitalWrite(trigPin, HIGH);      
+      delayMicroseconds(10); 
+      digitalWrite(trigPin, LOW);
+      duration = pulseIn(echoPin, HIGH);
+      distanceEcho = (duration/2) / 29.1;   
+      samplesEcho.add(distanceEcho); // add to buffer
 
-    distanceIR = get_Sharp_GP2Y0A02YK_Distance(SharpPin);
+      // display
+      Serial.print(F("Echo: "));     
+      Serial.print(distanceEcho*10);     
+      Serial.println(F(" mm"));
+      Serial.print(F("IR: "));     
+      Serial.print(distanceIR);     
+      Serial.println(F(" mm"));
+
+      // delay
+      delay(betweenMeasurements);
+    }
     
-    Serial.println("echo trigger");
-    long duration, distanceEcho;
-    digitalWrite(trigPin, LOW);  // Added this line
-    delayMicroseconds(2); // Added this line
-    digitalWrite(trigPin, HIGH);
-    //  delayMicroseconds(1000); - Removed this line
-    delayMicroseconds(10); // Added this line
-    digitalWrite(trigPin, LOW);
-    duration = pulseIn(echoPin, HIGH);
-    distanceEcho = (duration/2) / 29.1;   
-    uint8_t preparedistanceEcho = 0xFF; // out of range
-    if (distanceEcho >= 200 || distanceEcho <= 0){
-      Serial.println("Out of range");
-      Serial.println(distanceEcho);     
-    } else {
-      Serial.print(distanceEcho);
-      Serial.println(" cm");      
-      preparedistanceEcho = distanceEcho & 0xFF;
+    led_off();
+
+    sendLora();    
+}
+
+void sendLora() {
+    led_on();     
+
+    
+
+         
+    // pick one Echo
+    // taking the average
+    int distanceEchoFinal = samplesEcho.getAverage();
+
+    uint8_t preparedistanceEcho = 0xFF; // out of range by default      
+    if (distanceEchoFinal >= 200 || distanceEchoFinal <= 0){
+      //Serial.println("Out of range");
+      // if the average is out of range then almost all values where out of range!
+
+      // take lowest
+      distanceEchoFinal = samplesEcho.getLowest();
+      // again out of range??
+    }
+    if (!(distanceEchoFinal >= 200 || distanceEchoFinal <= 0)) {
+      preparedistanceEcho = distanceEchoFinal & 0xFF;
     }
 
+    // pick one IR
+    // Taking the median
+    long distanceIRFinal = samplesIR.getMedian();
     
-    if(distance > 1490) distanceIR = 0xFFFF; // we reserve this value for out of reach
-
-    uint16_t prepareDistanceIR = distanceIR & 0xFFFF; // 2 byte max filter
+    
+    if(distanceIRFinal > 1490) {
+      // maybe the lowest value?
+      distanceIRFinal = samplesIR.getLowest();      
+      // again out of range??
+    }
+    if(distanceIRFinal > 1490) {
+      distanceIRFinal = 0xFFFF; // we reserve this value for out of reach
+    }
+    Serial.print(F("Choose for echo: "));
+    Serial.println(distanceEchoFinal * 10);
+    Serial.print(F("Choose for IR: "));
+    Serial.println(distanceIRFinal);
+  
+    uint16_t prepareDistanceIR = distanceIRFinal & 0xFFFF; // 2 byte max filter
     
     uint8_t distance1IR = (prepareDistanceIR >> 8) & 0xFF; // first byte
     uint8_t distance2IR = (prepareDistanceIR) & 0xFF; // second byte
     
     uint8_t prepareMessenge[] = {preparedistanceEcho, distance1IR, distance2IR};
-    
+    Serial.println(F("Lora"));
     myLora.txBytes(prepareMessenge, sizeof(prepareMessenge)); 
     led_off();
 
-    delay(10* 1000);
+    delay(waitBetweenLora);
+    samplesIR.clear();
+    samplesEcho.clear();
 }
+
 
 /** Sharp distance sensor read function - uses analog port
 return distance in mm
